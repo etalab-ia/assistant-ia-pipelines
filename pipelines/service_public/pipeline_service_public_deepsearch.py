@@ -118,6 +118,8 @@ Voilà une réponse :
 {answer}
 Réponds avec une note entre 0 et 100 pour la confiance de la réponse en se basant sur le contexte et la question posée.
 Si la réponse est "Je ne sais pas" et ne contient pas de sources, réponds 100.
+Si la réponse ne réponds pas à la question réponds une note basse. 
+Si la réponse invente des choses qui ne sont pas dans le contexte réponds une note basse.
 Réponds uniquement avec une note entre 0 et 100 et aucun commentaire.
 note : 
 """
@@ -1255,16 +1257,5 @@ class Pipeline:
         if search.strip().lower() != "no_search":
             for conf_event in confidence_message(client, model, result, user_query, answer):
                 yield conf_event
-
-        yield {
-            "event": {
-                "type": "status",
-                "data": {
-                    "description": "Réponse envoyée à l'utilisateur",
-                    "done": True,
-                    "hidden": True,
-                },
-            }
-        }
 
         logger.info("=== PIPE REQUEST COMPLETED ===")
