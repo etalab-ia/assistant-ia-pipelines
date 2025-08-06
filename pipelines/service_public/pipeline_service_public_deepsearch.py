@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 logger = logging.getLogger("mon_logger")
 logger.setLevel(logging.DEBUG)
 
-PIPELINE_NAME="Assistant Service Public – Avec raisonnement"
+PIPELINE_NAME="Assistant Service Public – Recherche Approfondie"
 goggles = []  # ["https://gist.github.com/camilleAND/751a30edc9ae6304b345750ff77ba0dd"] #For BRAVE goggles
 collections_ids = [784,785] #Ex : [785] If empty, web search will be used
 
@@ -107,9 +107,64 @@ En te basant sur cet historique de conversation :
 question de l'utilisateur : {question}
 Réponds avec "easy" ou "complex" en fonction de la complexité de la question. Ne donnes pas d'explication.
 """
-
+## Prompt for confidence compute ##
+PROMPT_CONFIDENCE = """
+Tu es un assistant qui évalue la confiance de la réponse d'un assistant.
+Voilà un contexte :
+{context}
+Voilà une question :
+{question}
+Voilà une réponse :
+{answer}
+Réponds avec une note entre 0 et 100 pour la confiance de la réponse en se basant sur le contexte et la question posée.
+Si la réponse est "Je ne sais pas" et ne contient pas de sources, réponds 100.
+Réponds uniquement avec une note entre 0 et 100 et aucun commentaire.
+note : 
+"""
 
 #### END PROMPTS ####
+
+def confidence_message(
+    client, model, context, question, answer
+):
+    """Calculate confidence score and yield status message if confidence is low."""
+    try:
+        confidence = client.chat.completions.create(
+            model=model,
+            stream=False,
+            temperature=0.1,
+            max_tokens=3,
+            messages=[
+                {
+                    "role": "user",
+                    "content": PROMPT_CONFIDENCE.format(
+                        context=context, question=question, answer=answer
+                    ),
+                }
+            ],
+        )
+        confidence_text = confidence.choices[0].message.content
+        confidence_match = re.search(r"\b([0-9]|[1-9][0-9]|100)\b", confidence_text)
+        confidence = int(confidence_match.group(1)) if confidence_match else 0
+        logger.info(f"Confidence score calculated: {confidence}")
+        
+        # Only yield warning if confidence is below threshold
+        if confidence < 80:
+            yield {
+                "event": {
+                    "type": "status",
+                    "data": {
+                        "description": f"🔴 Indice de confiance faible : {confidence}% — Vérifiez les sources.",
+                        "done": True,
+                        "hidden": False,
+                    },
+                }
+            }
+        else:
+            return 0
+    except Exception as e:
+        logger.error(f"Erreur lors de la génération de la note de confiance: {e}")
+        return 0
 
 
 # For the citations
@@ -491,7 +546,6 @@ class SyncHelper:
         client,
         user_query,
         all_contexts,
-        urls,
         prompt_suffix,
         max_tokens,
     ):
@@ -507,7 +561,7 @@ class SyncHelper:
             prompt_suffix = ""
         context_combined = "\n".join(all_contexts)
         prompt = Prompts.redactor()
-        prompt = f"Contextes pertinents rassemblés:\n{context_combined}\n{urls}\n\n{prompt}\n{prompt_suffix}\n\nDemande utilisateur: {user_query}"
+        prompt = f"Contextes pertinents rassemblés:\n{context_combined}\n\n{prompt}\n{prompt_suffix}\n\nDemande utilisateur: {user_query}"
         
         logger.info("Final prompt generated successfully")
         return prompt
@@ -874,6 +928,8 @@ def sync_research(
             iteration += 1
 
         logger.info("=== GENERATING FINAL REPORT ===")
+        # Deduplicate aggregated_chunks
+        aggregated_chunks = list(set(aggregated_chunks))
         log_messages.append("\nGenerating final report...")
         yield {
             "event": {
@@ -886,7 +942,6 @@ def sync_research(
             client,
             user_query,
             aggregated_contexts,
-            "",
             prompt_suffix,
             max_tokens,
         )
@@ -1148,7 +1203,7 @@ class Pipeline:
                 logger.info("=== HANDLING EASY QUERY ===")
                 iteration_limit = 2
                 num_queries = 1
-                k = 3
+                k = 10
                 prompt_suffix = "Ignores les instructions précédentes, fais une réponse courte et concise qui répond à la question. L'utilisateur ne veut pas de réponse détaillée avec des informations inutiles."
                 search_type = "rapide"
 
@@ -1192,8 +1247,14 @@ class Pipeline:
         messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
         logger.info(f"Messages: \n{messages}")
 
+        answer = ""
         for resp in stream_albert(client, model, max_tokens, messages, __event_emitter__):
+            answer += resp["event"]["data"]["content"]
             yield resp
+
+        if search.strip().lower() != "no_search":
+            for conf_event in confidence_message(client, model, result, user_query, answer):
+                yield conf_event
 
         yield {
             "event": {
