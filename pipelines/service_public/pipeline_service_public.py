@@ -526,7 +526,7 @@ def pipe_rag(
                 logger.info("Performing internet search")
                 context = search_internet(ALBERT_API_URL, ALBERT_API_KEY, search)
                 logger.debug(f"Internet search context retrieved: \n\n\n{context}\n\n\n")
-                context = f"Voila ce qui a été trouvé sur internet : {context}"
+                context = f"Voila ce qui a été trouvé sur internet : {context} Réponds à l'utilisateur en utilisant ce qui a été trouvé."
             else:
                 logger.info("Performing Albert API search")
                 search_results = search_api_albert(

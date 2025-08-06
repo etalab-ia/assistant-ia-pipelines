@@ -163,7 +163,16 @@ def confidence_message(
                 }
             }
         else:
-            return 0
+            yield {
+                "event": {
+                    "type": "status",
+                    "data": {
+                        "description": "Fini !",
+                        "done": True,
+                        "hidden": True,
+                    },
+                }
+            }
     except Exception as e:
         logger.error(f"Erreur lors de la génération de la note de confiance: {e}")
         return 0
@@ -1257,5 +1266,16 @@ class Pipeline:
         if search.strip().lower() != "no_search":
             for conf_event in confidence_message(client, model, result, user_query, answer):
                 yield conf_event
+        else:
+            yield {
+                "event": {
+                    "type": "status",
+                    "data": {
+                        "description": "Fini !",
+                        "done": True,
+                        "hidden": True,
+                    },
+                }
+            }
 
         logger.info("=== PIPE REQUEST COMPLETED ===")
