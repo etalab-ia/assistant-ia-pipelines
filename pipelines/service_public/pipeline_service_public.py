@@ -23,14 +23,19 @@ PROPOSE_NET = True
 
 if PROPOSE_NET:
     manque_info = "propose à l'utilisateur que tu cherches sur internet si tu n'a pas déjà proposé."
-    exemple_net = """<history>
+    exemple_net = """
+<history>
 Comment faire un pret pour un appartement ?
 Assistant : Voulez vous chercher sur internet ?
 User : Oui
 </history>
 réponse attendue : 
 internet faire un pret pour un appartement
-Si l'utilisateur dis oui a une demande de recherche sur internet, commences ta recherche par internet suivi de la recherche."""
+
+
+Si l'utilisateur dis oui a une demande de recherche sur internet, commences ta recherche par internet suivi de la recherche.
+Réponds avec no_search, internet et ta recherche ou juste ta recherche.
+"""
     if_net = "et internet"
 else:
     manque_info = "demande des précisions à l'utilisateur"

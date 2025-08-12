@@ -284,12 +284,7 @@ class Prompts:
 
     @staticmethod
     def redactor():
-        return """Vous êtes un expert en rédaction de réponses de demande utilisateur. Soyez poli.
-        Sur la base des contextes rassemblés ci-dessus et de la requête initiale, rédigez une réponse complete, 
-        bien structurée en markdown et détaillée qui répond à la question de manière approfondie. Ne faites pas d'introduction, commencez tout de suite avec la réponse. Incluez des références sous la forme '[numero reference]' dans les paragraphes que vous rédigez qui renvoient aux références utilisées.
-        Mettez les références en bas de la réponse s'il vous en citez. N'utilisez que les références disponibles.
-        Incluez toutes les informations et conclusions utiles sans commentaires supplémentaires, ainsi que les noms d'articles et urls présents dans le contexte qui semble pertinents. Dans les références veillez a ne pas faire de doublons priorisez les URLs et les titres. N'utilises que les urls qui sont dans le contexte rassemblé.
-        """
+        return """En te basant sur ce contexte, réponds à la question de l'utilisateur. Cites les sources si il y en a en formattant ta réponse en markdown avec les urls. """
 
 
 class SyncHelper:
