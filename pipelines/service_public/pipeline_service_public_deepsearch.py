@@ -19,6 +19,78 @@ goggles = []  # ["https://gist.github.com/camilleAND/751a30edc9ae6304b345750ff77
 collections_ids = [784,785] #Ex : [785] If empty, web search will be used
 
 
+# For artifacts, not used now, to be implemented later
+#def generate_sources_iframe(aggregated_chunks, internet=False, style=""):
+#    sources_html = ""
+#    n_source = 0
+#    
+#    for chunk in aggregated_chunks:
+#        n_source += 1
+#        if internet:
+#            name = chunk
+#            url = extract_first_url(chunk)
+#        else:
+#            name = f"Source {n_source}"
+#            url = extract_first_url(chunk) if hasattr(chunk, 'url') else "#"
+#        
+#        # Générer le HTML pour chaque source
+#        sources_html += f"""
+#            <div class="source-item">
+#                <div class="source-header">
+#                    <span class="source-number">[Source {n_source}]</span>
+#                    <a href="{url}" target="_blank" class="source-link">{name}</a>
+#                </div>
+#                <div class="source-content">
+#                    {chunk}
+#                </div>
+#            </div>
+#        """
+#
+#style = """    <style>
+#        html, body {
+#            height: 100%;
+#            margin: 0;
+#            padding: 0;
+#        }
+#        body {
+#            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+#            padding: 20px;
+#            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+#            background-attachment: fixed;
+#            background-size: cover;
+#            background-repeat: no-repeat;
+#            min-height: 100vh;
+#            color: white;
+#            box-sizing: border-box;
+#        }
+#        .notification-card {
+#            background: rgba(255, 255, 255, 0.1);
+#            backdrop-filter: blur(10px);
+#            border-radius: 15px;
+#            padding: 25px;
+#            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+#            border: 1px solid rgba(255, 255, 255, 0.2);
+#            width: fit-content;
+#            max-width: 100%;
+#        }
+#        .title {
+#            font-size: 24px;
+#            font-weight: 600;
+#            margin-bottom: 15px;
+#            text-align: center;
+#        }
+#        .content {
+#            font-size: 16px;
+#            line-height: 1.6;
+#            text-align: justify;
+#        }
+#        .highlight {
+#            background: rgba(255, 255, 255, 0.2);
+#            padding: 2px 6px;
+#            border-radius: 4px;
+#            font-weight: 500;
+#        }
+#    </style>"""
 
 #### PROMPTS ####
 
@@ -983,6 +1055,31 @@ def sync_research(
                     },
                 }
             }
+
+        #sources_html = generate_sources_iframe(aggregated_chunks, internet=internet)
+
+        #yield {
+        #    "type": "artifacts",
+        #    "data": {
+        #        "type": "iframe",
+        #        "content": f"""
+        #        <!DOCTYPE html>
+        #        <html>
+        #        <head>
+        #        {style}
+        #        </head>
+        #        <body>
+        #            <div class="notification-card">
+        #                <div class="title">Sources</div>
+        #                <div class="sources-container">
+        #                    {sources_html}
+        #                </div>
+        #            </div>
+        #        </body>
+        #        </html>
+        #                    """,
+        #                }
+        #            }
 
         # Make sure to yield the final prompt as the last item
         yield final_prompt
