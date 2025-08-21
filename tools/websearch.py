@@ -1,7 +1,7 @@
 """
 title: WebSearch
 author: Camille Andre
-version: 0.1.2
+version: 0.1.3
 """
 
 import requests
@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 prompt_prefix = "Réponds à la demande ou question de l'utilisateur en te basant le contexte des sources suivantes :"
-prompt_suffix = "\n A la fin de ta réponse, ajoutes en markdown uniquement trois URLs max présentes les plus importantes dans le contexte avec le format [Nom du site](URL). Ne fais pas de doublons dans les URLs."
+prompt_suffix = "\n A la fin de ta réponse, ajoutes en markdown uniquement trois URLs max (ou moins) présentes les plus importantes dans le contexte avec le format [Nom du site](URL). Ne fais pas de doublons dans les URLs."
 
 
 def reranker(
@@ -49,7 +49,7 @@ def reranker(
         if "data" in results:
             # Get indices sorted by highest score
             ranked_indices = [item["index"] for item in results["data"]]
-            
+
             if score_threshold is not None:
                 reranked_chunks = [
                     chunks[idx]
@@ -58,10 +58,12 @@ def reranker(
                 ]
             else:
                 reranked_chunks = [chunks[idx] for idx in ranked_indices]
-            
+
             # Fallback to original chunks if too few results after filtering
             if len(reranked_chunks) < min_chunks:
-                logger.warning("Rerank failed (score threshold), returning original chunks")
+                logger.warning(
+                    "Rerank failed (score threshold), returning original chunks"
+                )
                 return chunks
             else:
                 logger.info("Rerank success, returning reranked chunks")
@@ -150,25 +152,28 @@ class Tools:
 
         json_data = response.json()
 
-        if "data" not in json_data or not json_data["data"]:
-            await emitter.success_update(
-                "Erreur lors de la recherche sur internet."
-            )
+        if "data" not in json_data:
+
+            print(response.text)
+            await emitter.success_update("Erreur lors de la recherche sur internet.")
             return "Erreur lors de la recherche sur internet."
 
         # Rerank results for better relevance
         try:
             chunks_list = reranker(
-                        query=search,
-                        chunks=json_data["data"],
-                        api_url=self.valves.ALBERT_URL,
-                        api_key=self.valves.ALBERT_KEY,
-                        min_chunks=5,
-                    )[:5]
+                query=search,
+                chunks=json_data["data"],
+                api_url=self.valves.ALBERT_URL,
+                api_key=self.valves.ALBERT_KEY,
+                min_chunks=5,
+            )[:5]
+
         except Exception as e:
             logger.error(f"Erreur lors du reranking: {e}")
+            print("Erreur rerank")
             chunks_list = json_data["data"]
 
+        print(chunks_list)
         chunks = []
         sources = []
         for n, result in enumerate(chunks_list):
@@ -176,8 +181,12 @@ class Tools:
                 f"[{result['chunk']['metadata'].get('document_name', 'Source inconnue')}] : {result['chunk']['content']}"
             )
             sources.append(
-                result["chunk"]["metadata"].get("document_name", "Source inconnue").removesuffix('.html')  # .html from Albert API
+                result["chunk"]["metadata"]
+                .get("document_name", "Source inconnue")
+                .removesuffix(".html")  # .html from Albert API
             )
+
+        print("CHUNKS : ", chunks)
 
         context = (
             prompt_prefix
@@ -187,12 +196,14 @@ class Tools:
             + prompt_suffix
         )
 
-        if len(chunks) == 0 :
-            context = "Rien de pertinent n'a été trouvé sur internet, possiblement bloqué par une whitelist."
+        if len(chunks) == 0:
+            context = "Rien de pertinent n'a été trouvé sur internet, Dis à l'utilisateur que le tool internet est bloqué par une whitelist ce qui empêche l'accès à certains sites web."
         else:
             for chunk, url in zip(chunks, sources):
                 await emitter.emit_citation(chunk, url)
 
         await emitter.success_update("Recherche internet terminée.")
+
+        print("CONTEXT : ", context)
 
         return context
