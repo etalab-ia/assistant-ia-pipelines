@@ -25,222 +25,86 @@ def generate_sources_iframe(aggregated_chunks, internet=False, style=""):
     
     for chunk in aggregated_chunks:
         n_source += 1
+        
+        # Traitement différent pour internet vs RAG
         if internet:
-            name = chunk
-            url = extract_first_url(chunk)
+            # Pour internet, chunk est une URL
+            url = chunk if chunk.startswith('http') else extract_first_url(str(chunk))
+            title = f"Source web {n_source}"
+            content_preview = f"Contenu web provenant de : {url}"
         else:
-            name = f"Source {n_source}"
-            url = extract_first_url(chunk) if hasattr(chunk, 'url') else "#"
+            # Pour le RAG, extraire le titre et le contenu du chunk
+            chunk_str = str(chunk)
+            
+            # Essayer d'extraire le titre entre crochets au début
+            title_match = re.match(r'^\[([^\]]+)\]', chunk_str)
+            if title_match:
+                title = title_match.group(1)
+                # Enlever l'extension .json du titre si présente
+                title = re.sub(r'\.json$', '', title)
+                # Enlever le titre du contenu
+                content = chunk_str[len(title_match.group(0)):].strip()
+            else:
+                title = f"Source {n_source}"
+                content = chunk_str
+            
+            # Extraire l'URL si disponible
+            url = extract_first_url(chunk_str)
+            
+            # Nettoyer le contenu
+            if " - " in content:
+                # Format probable: metadata - contenu
+                parts = content.split(" - ", 1)
+                if len(parts) > 1:
+                    metadata = parts[0].strip()
+                    main_content = parts[1].strip()
+                    
+                    # Si le contenu commence par une répétition du titre, l'enlever
+                    if main_content.startswith(title):
+                        main_content = main_content[len(title):].strip()
+                    
+                    content = main_content
+            
+            # Enlever les URLs du contenu puisqu'elles sont déjà dans le lien cliquable
+            if url:
+                content = content.replace(url, "").strip()
+            
+            # Enlever les patterns d'URLs communs
+            content = re.sub(r'https?://[^\s]+', '', content)
+            
+            # Nettoyer les espaces multiples et les tirets orphelins
+            content = re.sub(r'\s+', ' ', content)
+            content = re.sub(r'^\s*-\s*', '', content)
+            content = content.strip()
+            
+            # Limiter la longueur du contenu pour l'affichage
+            if len(content) > 800:
+                content = content[:800] + "..."
+            
+            content_preview = content.strip()
+        
+        # Créer le lien vers l'URL si disponible
+        url_link = ""
+        if url and url != "#":
+            domain = re.sub(r'https?://(www\.)?', '', url).split('/')[0]
+            url_link = f'<a href="{url}" target="_blank" rel="noopener noreferrer" class="source-link" title="{url}">🔗 {domain}</a>'
         
         # Générer le HTML pour chaque source
-        #<a href="{url}" target="_blank" class="source-link">{name}</a>
         sources_html += f"""
             <div class="source-item">
                 <div class="source-header">
                     <span class="source-number">Source {n_source}</span>
+                    {url_link}
                 </div>
+                <div class="source-title">{title}</div>
                 <div class="source-content">
-                    {chunk}
+                    {content_preview}
                 </div>
             </div>
         """
     return sources_html
 
-style = """    <style>
-html, body {
-    height: 100%;
-    margin: 0;
-    padding: 0;
-}
-
-body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    padding: 24px;
-    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #cbd5e1 100%);
-    background-attachment: fixed;
-    min-height: 100vh;
-    color: #ffffff;
-    box-sizing: border-box;
-}
-
-.notification-card {
-    background: rgba(255, 255, 255, 0.95);
-    border-radius: 12px;
-    padding: 32px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
-    width: fit-content;
-    max-width: 100%;
-    color: #1f2937;
-    animation: fadeInUp 0.6s ease-out;
-    height: 95%;
-}
-
-.title {
-    font-size: 24px;
-    font-weight: 600;
-    margin-bottom: 20px;
-    text-align: center;
-    color: #111827;
-}
-
-.content {
-    font-size: 16px;
-    line-height: 1.6;
-    text-align: justify;
-    color: #374151;
-}
-
-.highlight {
-    background: #dbeafe;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-weight: 500;
-    color: #1e40af;
-}
-
-.sources-container {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    height: 95%;
-    overflow-y: auto;
-    padding-right: 8px;
-}
-
-.source-item {
-    background: #ffffff;
-    border-radius: 8px;
-    padding: 20px;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-    border: 1px solid #e5e7eb;
-    animation: fadeInUp 0.5s ease-out both;
-}
-
-.source-item:hover {
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-    transform: translateY(-1px);
-}
-
-.source-header {
-    display: flex;
-    margin-bottom: 12px;
-    gap: 12px;
-    align-items: center;
-    flex-wrap: wrap;
-}
-
-.source-number {
-    background: #3b82f6;
-    color: white;
-    padding: 4px 12px;
-    border-radius: 16px;
-    font-weight: 600;
-    font-size: 12px;
-    white-space: nowrap;
-}
-
-.source-link {
-    color: #6b7280;
-    text-decoration: none;
-    transition: color 0.2s ease;
-}
-
-.source-link:hover {
-    color: #3b82f6;
-}
-
-.source-title {
-    color: #111827;
-    font-weight: 500;
-    font-size: 14px;
-    flex: 1;
-}
-
-.source-content {
-    font-size: 14px;
-    line-height: 1.5;
-    color: #4b5563;
-    background: #f9fafb;
-    padding: 16px;
-    border-radius: 6px;
-    border-left: 3px solid #3b82f6;
-    word-wrap: break-word;
-}
-
-/* Animation d'entrée */
-@keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(24px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-/* Délais d'animation échelonnés pour les sources */
-.source-item:nth-child(1) { animation-delay: 0.1s; }
-.source-item:nth-child(2) { animation-delay: 0.15s; }
-.source-item:nth-child(3) { animation-delay: 0.2s; }
-.source-item:nth-child(4) { animation-delay: 0.25s; }
-.source-item:nth-child(5) { animation-delay: 0.3s; }
-.source-item:nth-child(6) { animation-delay: 0.35s; }
-.source-item:nth-child(7) { animation-delay: 0.4s; }
-.source-item:nth-child(8) { animation-delay: 0.45s; }
-
-/* Scrollbar simple */
-.sources-container::-webkit-scrollbar {
-    width: 6px;
-}
-
-.sources-container::-webkit-scrollbar-track {
-    background: #f1f5f9;
-    border-radius: 3px;
-}
-
-.sources-container::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
-    border-radius: 3px;
-}
-
-.sources-container::-webkit-scrollbar-thumb:hover {
-    background: #94a3b8;
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-    body {
-        padding: 16px;
-    }
-    
-    .notification-card {
-        padding: 24px;
-    }
-    
-    .title {
-        font-size: 20px;
-    }
-    
-    .source-header {
-        flex-direction: column;
-        align-items: center;
-        gap: 8px;
-    }
-}
-
-/* Optionnel: animation au scroll pour les éléments qui apparaissent plus tard */
-@media (prefers-reduced-motion: reduce) {
-    * {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
-    }
-}
-
-
-    </style>"""
+style = "{{THEME_STYLE}}"
 
 #### PROMPTS ####
 
