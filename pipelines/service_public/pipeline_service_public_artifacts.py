@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 logger = logging.getLogger("mon_logger")
 logger.setLevel(logging.DEBUG)
 
-PIPELINE_NAME = "Assistant Service Public *"
+PIPELINE_NAME = "Assistant Service Public Artifacts"
 collection_dict = {"travail-emploi": 784, "service-public": 785}
 PROPOSE_NET = True
 
@@ -178,38 +178,16 @@ def generate_sources_iframe(aggregated_chunks, internet=False, style=""):
             url = chunk if chunk.startswith('http') else extract_first_url(str(chunk))
             title = f"Source web {n_source}"
             content_preview = f"Contenu web provenant de : {url}"
-        else:
-            # Pour le RAG, extraire le titre et le contenu du chunk
-            chunk_str = str(chunk)
-            
-            # Essayer d'extraire le titre entre crochets au début
-            title_match = re.match(r'^\[([^\]]+)\]', chunk_str)
-            if title_match:
-                title = title_match.group(1)
-                # Enlever l'extension .json du titre si présente
-                title = re.sub(r'\.json$', '', title)
-                # Enlever le titre du contenu
-                content = chunk_str[len(title_match.group(0)):].strip()
-            else:
-                title = f"Source {n_source}"
-                content = chunk_str
-            
+        else: # Rag
+            title = chunk['chunk']['metadata']['title']
+            content = chunk['chunk']['content']
             # Extraire l'URL si disponible
-            url = extract_first_url(chunk_str)
+            url = chunk['chunk']['metadata']['url']
+
+            if content.startswith(title):
+                content = content[len(title):].strip()
             
-            # Nettoyer le contenu
-            if " - " in content:
-                # Format probable: metadata - contenu
-                parts = content.split(" - ", 1)
-                if len(parts) > 1:
-                    metadata = parts[0].strip()
-                    main_content = parts[1].strip()
-                    
-                    # Si le contenu commence par une répétition du titre, l'enlever
-                    if main_content.startswith(title):
-                        main_content = main_content[len(title):].strip()
-                    
-                    content = main_content
+
             
             # Enlever les URLs du contenu puisqu'elles sont déjà dans le lien cliquable
             if url:
@@ -684,7 +662,8 @@ def pipe_rag(
                 logger.debug(f"Context generated: {len(references)} characters")
                 context = references
 
-
+                logger.info(f"Top chunks: \n{top_chunks}")
+                logger.info(f"search_results: \n{search_results}")
                 sources_html = generate_sources_iframe(top_chunks, internet=internet)
 
                 yield {
