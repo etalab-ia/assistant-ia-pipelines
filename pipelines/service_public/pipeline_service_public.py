@@ -21,21 +21,17 @@ PIPELINE_NAME = "Assistant Service Public"
 collection_dict = {"travail-emploi": 784, "service-public": 785}
 PROPOSE_NET = True
 
+
 if PROPOSE_NET:
     manque_info = "propose à l'utilisateur que tu cherches sur internet si tu n'a pas déjà proposé."
-    exemple_net = """
-<history>
+    exemple_net = """<history>
 Comment faire un pret pour un appartement ?
 Assistant : Voulez vous chercher sur internet ?
 User : Oui
 </history>
 réponse attendue : 
 internet faire un pret pour un appartement
-
-
-Si l'utilisateur dis oui a une demande de recherche sur internet, commences ta recherche par internet suivi de la recherche.
-Réponds avec no_search, internet et ta recherche ou juste ta recherche.
-"""
+Si l'utilisateur dis oui a une demande de recherche sur internet, commences ta recherche par internet suivi de la recherche."""
     if_net = "et internet"
 else:
     manque_info = "demande des précisions à l'utilisateur"
@@ -120,9 +116,10 @@ En te basant sur cet historique de conversation :
 </history>
 question de l'utilisateur : {question}
 Réponds avec uniquement une recherche pour trouver des documents qui peuvent t'aider à répondre à la dernière question de l'utilisateur.
-Réponds uniquement avec la recherche, rien d'autre. Donnes entre 2 et 10 mots clés pertinents.
+Réponds uniquement avec la recherche, rien d'autre, sous forme d'une question claire et précise.
 Si l'utilisateur parle du modèle lui même, réponds no_search.
 Si aucune recherche n'est nécessaire, réponds no_search.
+Si l'utilisateur demande internet, commence par internet
 """
 
 ## Prompt for confidence compute ##
@@ -291,6 +288,8 @@ def search_api_albert(
     web_search: bool = False,
 ) -> Optional[Dict]:
     """Performs search in Albert API collections."""
+    if method == "hybrid":
+        score_threshold = 0
     url = f"{api_url}/search"
     headers = {
         "accept": "application/json",
@@ -541,7 +540,7 @@ def pipe_rag(
                     api_key=ALBERT_API_KEY,
                     top_k=20,
                     rff_k=20,
-                    method="semantic",
+                    method=self.valves.SEARCH_METHOD,
                     score_threshold=self.valves.SEARCH_SCORE_THRESHOLD,
                     web_search=False,
                 )
@@ -640,7 +639,8 @@ class Pipeline:
         ] = Field(default="albert-large")
         RERANK_MODEL: str = Field(default="BAAI/bge-reranker-v2-m3")
         NUMBER_OF_CHUNKS: int = Field(default=5)
-        SEARCH_SCORE_THRESHOLD: float = Field(default=0.35)
+        SEARCH_SCORE_THRESHOLD: float = Field(default=0, description="Score threshold for the search API. 0 if method is hybrid.")
+        SEARCH_METHOD: Literal["semantic", "hybrid"] = Field(default="hybrid", description="Method for the search API. semantic if method is hybrid.")
         RERANKER_SCORE_THRESHOLD: float = Field(default=0.1)
         pass
  
@@ -650,6 +650,8 @@ class Pipeline:
         self.collection_dict = collection_dict
         self.SYSTEM_PROMPT = SYSTEM_PROMPT
         self.PROMPT = PROMPT
+        if self.valves.SEARCH_METHOD == "hybrid":
+            self.valves.SEARCH_SCORE_THRESHOLD = 0
 
     async def on_startup(self):
         """Called when the server is started."""

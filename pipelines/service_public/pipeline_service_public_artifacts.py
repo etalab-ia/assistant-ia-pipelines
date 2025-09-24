@@ -9,6 +9,7 @@ import re
 import requests
 from typing import List, Optional, Dict
 from openai import OpenAI
+from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
 from typing import Literal
@@ -17,13 +18,15 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 logger = logging.getLogger("mon_logger")
 logger.setLevel(logging.DEBUG)
 
-PIPELINE_NAME = "Assistant Service Public Artifacts"
+PIPELINE_NAME = "Assistant Service Public v2"
 collection_dict = {"travail-emploi": 784, "service-public": 785}
 PROPOSE_NET = True
 
 if PROPOSE_NET:
     manque_info = "propose à l'utilisateur que tu cherches sur internet si tu n'a pas déjà proposé."
     exemple_net = """
+Si l'utilisateur parle d'internet ou d'actualités, commence la recherche par internet suivi de la recherche.
+Exemples :
 <history>
 Comment faire un pret pour un appartement ?
 Assistant : Voulez vous chercher sur internet ?
@@ -32,9 +35,15 @@ User : Oui
 réponse attendue : 
 internet faire un pret pour un appartement
 
+<history>
+Cherche sur internet quelle est la ville la plus chère pour acheter un appartement
+</history>
+réponse attendue : 
+internet ville la plus chère pour acheter un appartement
 
-Si l'utilisateur dis oui a une demande de recherche sur internet, commences ta recherche par internet suivi de la recherche.
-Réponds avec no_search, internet et ta recherche ou juste ta recherche.
+
+Si l'utilisateur dis oui a une demande de recherche sur internet ou demande internet ou actualités, commences ta recherche par internet suivi de la recherche.
+Réponds avec no_search, internet + ta recherche ou juste ta recherche.
 """
     if_net = "et internet"
 else:
@@ -71,38 +80,39 @@ Si tu ne trouves pas d'éléments de réponse dans le contexte ou dans ton promp
 """
 
 ## CONTEXT FOR NO CONTEXT QUESTION ##
-NO_CONTEXT_MEMORY = """Aucun contexte n'est nécessaire, réponds gentillement à l'utilisateur. N'ajoutes pas de sources en fin de réponse. Si besoin, voilà les informations que tu connais ; 
+NO_CONTEXT_MEMORY = f"""Aucun contexte n'est nécessaire, réponds gentillement à l'utilisateur. N'ajoutes pas de sources en fin de réponse. Si besoin, voilà les informations que tu connais ; 
 - Tu es un modèle opensource adapté par Etalab pour aider les agents publics.
-- Tu es connecté a des bases de données.
+- Tu es connecté a des bases de données {if_net}
 - L'utilisateur peut regarder en haut a gauche s'il trouve un autre agent spécialisé dans la liste qui pourrait l'aider pour sa question si elle n'est pas sur ton sujet a toi.
 """
 
 ## PROMPT FOR CONTEXTUALISED SEARCH ##
 PROMPT_SEARCH = """
-Tu es un assistant qui cherche des documents pour répondre à une question.
+Tu es un assistant génère des recherches pour répondre à une question.
+Réponds toujours avec no_search ou ta recherche en fonction de la demande.
 Exemples pour t'aider: 
 <history>
 Ma soeur va se marier, j'ai le droit a des jours de congés ?
 </history>
-réponse attenue : 
+réponse attendue : 
 jours de congés pour mariage frere ou soeur
 
 <history>
 Coucou
 </history>
-réponse attenue : 
+réponse attendue : 
 no_search
 
 <history>
 Où travaille John Doe ?
 </history>
-réponse attenue : 
+réponse attendue : 
 John Doe travail
 
 <history>
 Qui est le CEO de blackrock ?
 </history>
-réponse attenue : 
+réponse attendue : 
 CEO Blackrock
 
 <history>
@@ -119,8 +129,7 @@ En te basant sur cet historique de conversation :
 {history}
 </history>
 question de l'utilisateur : {question}
-Réponds avec uniquement une recherche pour trouver des documents qui peuvent t'aider à répondre à la dernière question de l'utilisateur.
-Réponds uniquement avec la recherche, rien d'autre. Donnes entre 2 et 10 mots clés pertinents.
+Réponds avec la recherche attendue pour trouver des documents qui peuvent t'aider à répondre à la dernière question de l'utilisateur.
 Si l'utilisateur parle du modèle lui même, réponds no_search.
 Si aucune recherche n'est nécessaire, réponds no_search.
 """
@@ -164,6 +173,106 @@ def extract_first_url(text):
         return match.group(0)  # Return the matched URL
     else:
         return None
+
+
+def nom_site_simple(url: str) -> str:
+    h = urlparse(url).hostname or url
+    p = h.split('.')
+    return p[-2] if len(p) >= 2 else h
+
+def check_iframe_support(url):
+    """
+    Vérifie si une URL accepte d'être intégrée dans des iframes
+    en analysant les en-têtes HTTP de sécurité
+    """
+    try:
+        # Ajouter http:// si aucun schéma n'est spécifié
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+
+        # Effectuer une requête HEAD pour récupérer uniquement les en-têtes
+        response = requests.head(url, timeout=10, allow_redirects=True)
+
+        # Vérifier le code de statut
+        if response.status_code >= 400:
+            print(f"❌ Erreur HTTP {response.status_code} pour {url}")
+            return False
+
+        headers = response.headers
+
+        # Analyser les en-têtes de sécurité
+        results = {
+            "url": url,
+            "status_code": response.status_code,
+            "iframe_allowed": True,
+            "restrictions": [],
+        }
+
+        # Vérifier X-Frame-Options
+        x_frame_options = headers.get("X-Frame-Options", "").upper()
+        if x_frame_options:
+            if x_frame_options in ["DENY", "SAMEORIGIN"]:
+                results["iframe_allowed"] = False
+                results["restrictions"].append(f"X-Frame-Options: {x_frame_options}")
+            elif x_frame_options.startswith("ALLOW-FROM"):
+                results["restrictions"].append(f"X-Frame-Options: {x_frame_options}")
+
+        # Vérifier Content-Security-Policy
+        csp = headers.get("Content-Security-Policy", "")
+        if "frame-ancestors" in csp.lower():
+            if "'none'" in csp.lower():
+                results["iframe_allowed"] = False
+                results["restrictions"].append("CSP: frame-ancestors 'none'")
+            elif "'self'" in csp.lower():
+                results["restrictions"].append("CSP: frame-ancestors 'self'")
+            else:
+                # Extraire la directive frame-ancestors
+                csp_parts = csp.split(";")
+                for part in csp_parts:
+                    if "frame-ancestors" in part.lower():
+                        results["restrictions"].append(f"CSP: {part.strip()}")
+
+        return results["iframe_allowed"]
+
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Erreur de connexion pour {url}: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Erreur inattendue pour {url}: {e}")
+        return False
+def html_generation(urls):
+    """
+    Génère les iframes avec validation côté client
+    """
+    html = ""
+    html_ok = ""
+    html_nok = ""
+    urls = list(set(urls))
+    for i, url in enumerate(urls):
+        safe_url = url.replace(".html", "")
+        if check_iframe_support(safe_url):
+            html_ok += f"""
+            <div id="container-{i}" style="width:100%;height:800px;border-radius:8px; overflow:hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.2); margin-bottom:20px;">
+                <iframe id="frame-{i}" src="{safe_url}" width="100%" height="100%" style="border:none;"></iframe>
+            </div>
+            """
+        else:
+            html_nok += f"""
+                <div id="container-{i}" style="width:100%;height:60px;border-radius:8px;overflow:hidden;
+                    box-shadow:0 2px 8px rgba(0,0,0,.08);margin-bottom:20px;display:flex;align-items:center;
+                    justify-content:center;gap:12px;background:#f7f9fc;border:1px solid #e2e8f0;
+                    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#334155;">
+                <span>Aperçu indisponible</span>
+                <a href="{safe_url}" target="_blank" rel="noopener"
+                    style="padding:6px 10px;border-radius:6px;text-decoration:none;font-size:.9em;
+                    background:#2563eb;color:#fff;border:1px solid #1e4fd1;">
+                    Ouvrir {nom_site_simple(safe_url).capitalize()}
+                </a>
+                </div>
+            """
+    html = html_ok + html_nok
+
+    return html
         
 def generate_sources_iframe(aggregated_chunks, internet=False, style=""):
     sources_html = ""
@@ -434,35 +543,70 @@ def webpage_to_human_readable(page_content):
     return cleaned_text
 
 
-def search_internet(api_url, api_key, prompt):
-    """Search internet using Albert API."""
+def search_internet(
+    search, api_url, api_key):
+    """
+    Recherche sur Internet pour récupérer le contenu de sites. Cherche des informations, des nouvelles, des connaissances, des contacts publics, la météo, etc.
+    :params search: Web Query used in search engine.
+    :return: The content of the web pages.
+    """
+
     session = requests.session()
     session.headers = {"Authorization": f"Bearer {api_key}"}
 
-    data = {"collections": [], "web_search": True, "k": 10, "prompt": prompt}
-    response = session.post(url=f"{api_url}/search", json=data)
+    data = {"collections": [], "web_search": True, "k": 10, "prompt": search}
 
-    logger.debug("Internet search results retrieved")
+    try:
+        response = session.post(url=f"{api_url}/search", json=data)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        logger.error(f"Erreur lors de la requête : {e}")
+        return "Erreur du service de recherche."
 
-    chunks = [
-        f"Context {n} : {webpage_to_human_readable(result['chunk']['content'])}"
-        for n, result in enumerate(response.json()["data"])
-    ]
-    sources = list(
-        set(
-            [
-                result["chunk"]["metadata"]["document_name"]
-                for result in response.json()["data"]
-            ]
+    json_data = response.json()
+
+    if "data" not in json_data:
+
+        print(response.text)
+        return "Erreur lors de la recherche sur internet."
+
+    # Rerank results for better relevance
+    try:
+        chunks_list = reranker(
+            query=search,
+            chunks=json_data["data"],
+            api_url=api_url,
+            api_key=api_key,
+            min_chunks=5,
+        )[:5]
+
+    except Exception as e:
+        logger.error(f"Erreur lors du reranking: {e}")
+        print("Erreur rerank")
+        chunks_list = json_data["data"]
+
+    chunks = []
+    sources = []
+    for n, result in enumerate(chunks_list):
+        chunks.append(
+            f"[{result['chunk']['metadata'].get('document_name', 'Source inconnue')}] : {result['chunk']['content']}"
         )
+        sources.append(
+            result["chunk"]["metadata"]
+            .get("document_name", "Source inconnue")
+            .removesuffix(".html")  # .html from Albert API
+        )
+    prompt_prefix = "Recherche internet terminée. Réponds à la demande ou question de l'utilisateur en te basant le contexte suivant, extrais uniquement le contenu pertinent et ignore le reste : \n"
+    prompt_suffix = "Ne mets pas les URLs dans ta réponse, je les donnerais moi même à l'utilisateur." #"\n A la fin de ta réponse, ajoutes en markdown uniquement trois URLs max (ou moins) présentes les plus importantes dans le contexte avec le format [Nom du site](URL). Ne fais pas de doublons dans les URLs."
+
+    context = (
+        prompt_prefix
+        + "\n\n".join(chunks)
+    #    + "\n\nSources : "
+    #    + ", ".join(sources)
+        + prompt_suffix
     )
-
-    context = "\n\n".join(chunks) + "\n\nSources : " + ", ".join(sources)
-
-    if len(context.strip()) < 100 : 
-        context = "Rien de pertinent n'a été trouvé sur internet, avertissez l'utilisateur que vous êtes bloqué par une whitelist.."
-
-    return context
+    return context, sources
 
 
 def reranker(
@@ -620,9 +764,19 @@ def pipe_rag(
             if list(collection_dict.keys()) == ["internet"] or ("internet" in search.strip().lower() and PROPOSE_NET):
                 internet = True
                 logger.info("Performing internet search")
-                context = search_internet(ALBERT_API_URL, ALBERT_API_KEY, search)
+                context, sources = search_internet(api_url=ALBERT_API_URL, api_key=ALBERT_API_KEY, search=search)
                 logger.debug(f"Internet search context retrieved: \n\n\n{context}\n\n\n")
-                context = f"Voila ce qui a été trouvé sur internet : {context} Réponds à l'utilisateur en utilisant ce qui a été trouvé."
+                #context = f"Voila ce qui a été trouvé sur internet : {context} Réponds à l'utilisateur en utilisant ce qui a été trouvé."
+                
+                html = html_generation(sources)
+                yield {
+                    "event": {"type": "artifacts",
+                    "data": {
+                        "type": "iframe",
+                        "content": f"{html}"
+                    }
+                }}
+
             else:
                 internet = False
                 logger.info("Performing Albert API search")
@@ -662,8 +816,8 @@ def pipe_rag(
                 logger.debug(f"Context generated: {len(references)} characters")
                 context = references
 
-                logger.info(f"Top chunks: \n{top_chunks}")
-                logger.info(f"search_results: \n{search_results}")
+                #logger.info(f"Top chunks: \n{top_chunks}")
+                #logger.info(f"search_results: \n{search_results}")
                 sources_html = generate_sources_iframe(top_chunks, internet=internet)
 
                 yield {
@@ -721,7 +875,7 @@ def pipe_rag(
         }
 
     logger.debug("Messages prepared for Albert response generation")
-    [logger.info(f"Message: {str(msg)[:50]}...") for msg in messages]
+    [logger.info(f"Message: {str(msg)[:500]}...") for msg in messages]
 
     # Generate and stream response
     answer = ""

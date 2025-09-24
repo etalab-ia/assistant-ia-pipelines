@@ -374,11 +374,14 @@ def search_api_albert(
     api_key: str = "",
     top_k: int = 5,
     rff_k: int = 20,
-    method: str = "semantic",
+    method: str = "hybrid",
     score_threshold: float = 0,
     web_search: bool = False,
 ) -> Optional[Dict]:
     """Performs search in Albert API collections."""
+
+    if method == "hybrid":
+        score_threshold = 0
     url = f"{api_url}/search"
     headers = {
         "accept": "application/json",
@@ -414,6 +417,7 @@ def search_api_albert(
     except ValueError as e:
         logger.error(f"JSON parsing error: {e}")
         raise
+
 
 
 def webpage_to_human_readable(page_content):
@@ -629,7 +633,7 @@ def pipe_rag(
                     api_key=ALBERT_API_KEY,
                     top_k=20,
                     rff_k=20,
-                    method="semantic",
+                    method=self.valves.SEARCH_METHOD,
                     score_threshold=self.valves.SEARCH_SCORE_THRESHOLD,
                     web_search=False,
                 )
@@ -729,8 +733,10 @@ class Pipeline:
         ] = Field(default="albert-large")
         RERANK_MODEL: str = Field(default="BAAI/bge-reranker-v2-m3")
         NUMBER_OF_CHUNKS: int = Field(default=5)
-        SEARCH_SCORE_THRESHOLD: float = Field(default=0.35)
+        SEARCH_SCORE_THRESHOLD: float = Field(default=0, description="Score threshold for the search API. 0 if method is hybrid.")
+        SEARCH_METHOD: Literal["semantic", "hybrid"] = Field(default="hybrid", description="Method for the search API. semantic if method is hybrid.")
         RERANKER_SCORE_THRESHOLD: float = Field(default=0.1)
+
         pass
  
     def __init__(self):
@@ -739,6 +745,8 @@ class Pipeline:
         self.collection_dict = collection_dict
         self.SYSTEM_PROMPT = SYSTEM_PROMPT
         self.PROMPT = PROMPT
+        if self.valves.SEARCH_METHOD == "hybrid":
+            self.valves.SEARCH_SCORE_THRESHOLD = 0
 
     async def on_startup(self):
         """Called when the server is started."""
