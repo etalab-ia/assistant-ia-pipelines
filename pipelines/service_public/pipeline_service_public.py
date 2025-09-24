@@ -360,7 +360,7 @@ def search_internet(api_url, api_key, prompt):
     sources = list(
         set(
             [
-                result["chunk"]["metadata"]["document_name"]
+                result["chunk"]["metadata"]["document_name"].removesuffix(".html")
                 for result in response.json()["data"]
             ]
         )
