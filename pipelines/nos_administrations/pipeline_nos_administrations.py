@@ -311,7 +311,6 @@ def stream_albert(
         )
 
         output = ""
-        first_token = True
         for chunk in chat_response:
             try:
                 # Check if chunk has valid structure
@@ -324,12 +323,6 @@ def stream_albert(
                 token = getattr(delta, "content", "") if delta else ""
 
                 if token:
-                    # Add 1 second delay before first token for smoother UX
-                    if first_token:
-                        import time
-                        time.sleep(1)
-                        first_token = False
-                    
                     output += token
                     yield {
                         "event": {
