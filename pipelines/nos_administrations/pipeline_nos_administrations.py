@@ -64,6 +64,7 @@ En t'aidant si besoin du le contexte ci-dessus et de la conversation, réponds a
 Continue la conversation de manière claire.
 A la fin de ta réponse, ajoute les sources ou liens urls utilisés pour répondre à la question. Quand tu mets des liens donne leurs des noms simples avec la notation markdown.
 Si tu mets des sources en fin de réponse, ne mets QUE les sources liées à ta réponse, jamais de source inutilement.
+Si tu mets une source, ajoute également la date de modification de la source si elle est disponible dans le contexte.
 Si tu ne trouves pas d'éléments de réponse dans le contexte ou dans ton prompt system, réponds que tu manques d'informations ou """ + manque_info + """. Sois poli.
 """
 
@@ -228,10 +229,9 @@ def format_chunks_to_text(chunk: dict) -> str:
         pass
 
     directory_url = (
-        f"URL de l'annuaire : {chunk.get('directory_url', 'NON DISPONIBLE')}"
+        f"URL de l'annuaire : {chunk.get('directory_url', 'NON DISPONIBLE')} (Date de modification : {chunk.get('modification_date', 'NON DISPONIBLE')})"
     )
 
-    # Text to embed in order to makes the search more efficient
     fields = [
         f"Nom : {chunk.get('name')}",
         f"Mission : {chunk.get('mission_description', '')}",
@@ -704,6 +704,18 @@ def pipe_rag(
         yield resp
 
     logger.info(f"Final answer generated: {answer[:100]}...")
+
+    if "http://" in answer or "https://" in answer:
+        yield {
+                "event": {
+                    "type": "status",
+                    "data": {
+                        "description": f"Des écarts de mise à jour peuvent exister entre mes connaissances de l'annuaire et l'annuaire en ligne. Vérifiez les liens.",
+                        "done": True,
+                        "hidden": False,
+                    },
+                }
+            }
     
     # Calculate and display confidence if needed
     for conf_event in confidence_message(client, model, context, prompt, answer):
