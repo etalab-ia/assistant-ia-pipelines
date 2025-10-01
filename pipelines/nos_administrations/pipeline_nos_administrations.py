@@ -705,17 +705,16 @@ def pipe_rag(
 
     logger.info(f"Final answer generated: {answer[:100]}...")
 
-    if "http://" in answer or "https://" in answer:
+    if "lannuaire.service-public" in answer:
         yield {
-                "event": {
-                    "type": "status",
-                    "data": {
-                        "description": f"Des écarts de mise à jour peuvent exister entre mes connaissances de l'annuaire et l'annuaire en ligne. Vérifiez les liens.",
-                        "done": True,
-                        "hidden": False,
-                    },
-                }
+            "event": {
+                "type": "message",
+                "data": {
+                    "content": "\n\n_Des écarts de mise à jour peuvent exister entre mes connaissances de l'annuaire et l'annuaire en ligne. Vérifiez les liens._",
+                    "done": False,
+                },
             }
+        }
     
     # Calculate and display confidence if needed
     for conf_event in confidence_message(client, model, context, prompt, answer):
