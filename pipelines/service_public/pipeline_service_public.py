@@ -220,6 +220,7 @@ def stream_albert(
         )
 
         output = ""
+        word_buffer = ""
         for chunk in chat_response:
             try:
                 # Check if chunk has valid structure
@@ -233,15 +234,38 @@ def stream_albert(
 
                 if token:
                     output += token
-                    yield {
-                        "event": {
-                            "type": "message",
-                            "data": {
-                                "content": token,
-                                "done": False,
-                            },
+                    word_buffer += token
+                    # Yield only when a space is detected (i.e., a word is complete)
+                    while " " in word_buffer:
+                        word, word_buffer = word_buffer.split(" ", 1)
+                        # Add the space back to the word
+                        word += " "
+                        yield {
+                            "event": {
+                                "type": "message",
+                                "data": {
+                                    "content": word,
+                                    "done": False,
+                                },
+                            }
                         }
-                    }
+                # At the end, after finish_reason, flush any remaining word_buffer
+                if finish_reason is not None:
+                    if word_buffer:
+                        yield {
+                            "event": {
+                                "type": "message",
+                                "data": {
+                                    "content": word_buffer,
+                                    "done": False,
+                                },
+                            }
+                        }
+                    break
+
+            except Exception as inner_e:
+                logger.error(f"Error in streaming chunk: {inner_e}")
+                continue
                 
                 # Exit when generation is complete
                 if finish_reason is not None:
